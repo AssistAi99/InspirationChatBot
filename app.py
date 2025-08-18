@@ -98,9 +98,11 @@ if user_input:
     else:
         top_candidate, _ = candidates[0]
         others = [c for c, _ in candidates[1:]]
+        
+        AllCandidate = [c for c, _ in candidates]
 
         #gpt_reply = ask_gpt_strict(user_input, top_candidate, others)
-        gpt_reply = ask_gpt_strict(user_input, top_candidate, candidates)
+        gpt_reply = ask_gpt_strict(user_input, top_candidate, AllCandidate)
         st.session_state.history.append(("bot", gpt_reply))
 
         # Enrich with Excel full data (URL, Icon, Game Screenshots, etc.)
