@@ -1,13 +1,14 @@
 # app.py
 import streamlit as st
-import openai
+from openai import OpenAI
 import numpy as np
 import json
 import faiss
 import pandas as pd
 
 # ========== CONFIG ==========
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])  # ✅ Use Streamlit secrets
+
 INDEX_FILE = "games_index.faiss"
 DATA_FILE = "games_data.jsonl"
 
@@ -21,11 +22,11 @@ df = pd.read_excel("NewInspired.xlsx")
 
 # ========== HELPERS ==========
 def get_embedding(text: str):
-    response = openai.Embedding.create(
-        input=[text],
-        model="text-embedding-ada-002"
+    response = client.embeddings.create(
+        input=text,
+        model="text-embedding-3-small"   # ✅ new embedding model
     )
-    return response['data'][0]['embedding']
+    return response.data[0].embedding
 
 def search_candidates(query: str, top_k=3, threshold=0.70):
     """Find top K candidates using FAISS. Only return if similarity above threshold."""
@@ -57,18 +58,20 @@ The user asked: "{query}"
 
 Rules:
 - You must ONLY use the given candidates.
-- The best answer is always the **Top Candidate** ,which perfectly matches to the users query.
+- The best answer is always the **Top Candidate**, which perfectly matches to the users query.
 - Mention that others are also related, but the main recommendation is the that one which matches the users query.
 - Never invent games that are not in the list.
 - Answer in a friendly, conversational way.
 """
 
-    resp = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "system", "content": "You are a strict game database assistant."},
-                  {"role": "user", "content": prompt}]
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",   # ✅ new API style
+        messages=[
+            {"role": "system", "content": "You are a strict game database assistant."},
+            {"role": "user", "content": prompt}
+        ]
     )
-    return resp['choices'][0]['message']['content']
+    return resp.choices[0].message.content
 
 def enrich_with_excel(game_name):
     """Fetch all metadata for a given game from Excel."""
@@ -105,7 +108,6 @@ if user_input:
         # Enrich with Excel full data (URL, Icon, Game Screenshots, etc.)
         game_data = enrich_with_excel(top_candidate["Game Name"])
         if game_data:
-            # Show structured info (customizable)
             st.session_state.history.append(("meta", game_data))
 
 # Render chat
@@ -122,19 +124,6 @@ for role, msg in st.session_state.history:
             st.markdown(f"🔗 [Play / Info Link]({msg['Game URL']})")
         if "Game Icon URL" in msg and pd.notna(msg["Game Icon URL"]):
             st.image(msg["Game Icon URL"], width=100)
-        #if "Game Screenshots" in msg and pd.notna(msg["Game Screenshots"]):
-        #    st.image(msg["Game Screenshots"], width=300)
-         # ✅ Handle multiple screenshot links
-        #if "Game Screenshots" in msg and pd.notna(msg["Game Screenshots"]):
-        #    urls = str(msg["Game Screenshots"]).replace("\n", ",").replace(" ", ",").split(",")
-        #    urls = [u.strip() for u in urls if u.strip()]
-        #    if urls:
-        #        st.write("📸 **Screenshots:**")
-        #        cols = st.columns(min(3, len(urls)))  # show in rows of 3
-        #        for i, url in enumerate(urls):
-        #            with cols[i % 3]:
-        #                st.image(url, width=200)  
-         # ✅ Show up to 4 screenshots in a single row
         if "Game Screenshots" in msg and pd.notna(msg["Game Screenshots"]):
             urls = str(msg["Game Screenshots"]).replace("\n", ",").replace(" ", ",").split(",")
             urls = [u.strip() for u in urls if u.strip()]
@@ -144,7 +133,6 @@ for role, msg in st.session_state.history:
                 for i in range(min(4, len(urls))):  # only first 4 screenshots
                     with cols[i]:
                         st.image(urls[i], width=200)
-        # Any extra columns will show automatically
         for col, val in msg.items():
             if col not in ["Game Name", "Publisher", "Inspiration", "Game URL", "Game Icon URL", "Game Screenshots"]:
                 st.write(f"**{col}:** {val}")
