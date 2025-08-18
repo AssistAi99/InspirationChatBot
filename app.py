@@ -41,7 +41,7 @@ def search_candidates(query: str, top_k=3, threshold=0.70):
             results.append((game_records[idx], similarity))
     return results
 
-def ask_gpt_strict(query: str, top_candidate: dict, other_candidates: list):
+def ask_gpt_strict(query: str, other_candidates: list):
     """GPT explains strictly based on candidates. No invention allowed."""    
     context = "Here are the available games:\n"
     for c in other_candidates:
@@ -56,12 +56,15 @@ def ask_gpt_strict(query: str, top_candidate: dict, other_candidates: list):
     Rules:
     - You must ONLY use the given games.
     - Select the ONE best-matching game based on the user's query (match can be in Game Name, Publisher, or Inspiration).
-    - Clearly state which game is the main recommendation and explain why it matches well.
-    - If other games are somewhat related, mention them briefly, but always emphasize the best match first.
-    - Never invent or add games that are not in the list.
-    - Respond in a friendly, conversational way.
+    - Select the ONE best-matching game and return it in strict JSON format.
+    - JSON format must be:
+      {{
+        "best_match": "Game Name",
+        "reason": "Why it matches the query",
+        "others": ["Other related game names..."]
+      }}
+    - Do not invent new games or add extra fields.
     """
-
 
     resp = openai.ChatCompletion.create(
         model="gpt-4o-mini",
@@ -99,17 +102,30 @@ if user_input:
         top_candidate, _ = candidates[0]
         others = [c for c, _ in candidates[1:]]
         
-        AllCandidate = [c for c, _ in candidates]
+        all_candidates = [c for c, _ in candidates]
 
         #gpt_reply = ask_gpt_strict(user_input, top_candidate, others)
-        gpt_reply = ask_gpt_strict(user_input, top_candidate, AllCandidate)
-        st.session_state.history.append(("bot", gpt_reply))
+        gpt_reply = ask_gpt_strict(user_input, all_candidates)
+    
+    try:
+        result = json.loads(gpt_reply)  # parse GPT JSON
+        best_game = result["best_match"]
+        reason = result["reason"]
+        others = result.get("others", [])
+        
+        # Show friendly response
+        bot_message = f"🎯 Best match: **{best_game}**\n\n💡 Reason: {reason}"
+        if others:
+            bot_message += "\n\nOther related games: " + ", ".join(others)
+        st.session_state.history.append(("bot", bot_message))
 
-        # Enrich with Excel full data (URL, Icon, Game Screenshots, etc.)
-        game_data = enrich_with_excel(top_candidate["Game Name"])
+        # Enrich with Excel
+        game_data = enrich_with_excel(best_game)
         if game_data:
-            # Show structured info (customizable)
             st.session_state.history.append(("meta", game_data))
+
+    except Exception as e:
+        st.session_state.history.append(("bot", f"⚠️ Error parsing GPT reply: {gpt_reply}"))
 
 # Render chat
 for role, msg in st.session_state.history:
