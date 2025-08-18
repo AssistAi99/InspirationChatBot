@@ -5,6 +5,7 @@ import numpy as np
 import json
 import faiss
 import pandas as pd
+import json, re
 
 # ========== CONFIG ==========
 openai.api_key = st.secrets["OPENAI_API_KEY"]
@@ -56,14 +57,13 @@ def ask_gpt_strict(query: str, other_candidates: list):
     Rules:
     - You must ONLY use the given games.
     - Select the ONE best-matching game based on the user's query (match can be in Game Name, Publisher, or Inspiration).
-    - Select the ONE best-matching game and return it in strict JSON format.
-    - JSON format must be:
-      {{
-        "best_match": "Game Name",
-        "reason": "Why it matches the query",
-        "others": ["Other related game names..."]
-      }}
-    - Do not invent new games or add extra fields.
+    - Always return valid JSON only, no extra text.
+    - STRICTLY - JSON schema:
+    {{
+    "best_match": "<Game Name>",
+    "reason": "Why this is the best match,with the explanation as life like assistant,Respond in a friendly, conversational way.",
+    "others": ["<Other candidate 1>", "<Other candidate 2>"] "with the explanation as life like assistant,Respond in a friendly, conversational way."
+    }}
     """
 
     resp = openai.ChatCompletion.create(
@@ -79,6 +79,21 @@ def enrich_with_excel(game_name):
     if row.empty:
         return None
     return row.iloc[0].to_dict()
+
+
+def parse_gpt_json(reply: str):
+    try:
+        # Direct attempt
+        return json.loads(reply)
+    except:
+        # Fallback: extract JSON inside ```json ... ```
+        match = re.search(r"\{.*\}", reply, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except:
+                return None
+        return None
 
 # ========== STREAMLIT UI ==========
 st.set_page_config(page_title="Game Finder Chatbot", page_icon="🎮", layout="centered")
@@ -107,25 +122,28 @@ if user_input:
         #gpt_reply = ask_gpt_strict(user_input, top_candidate, others)
         gpt_reply = ask_gpt_strict(user_input, all_candidates)
     
-    try:
-        result = json.loads(gpt_reply)  # parse GPT JSON
-        best_game = result["best_match"]
-        reason = result["reason"]
-        others = result.get("others", [])
-        
-        # Show friendly response
-        bot_message = f"🎯 Best match: **{best_game}**\n\n💡 Reason: {reason}"
-        if others:
-            bot_message += "\n\nOther related games: " + ", ".join(others)
-        st.session_state.history.append(("bot", bot_message))
+        parsed = parse_gpt_json(gpt_reply)
 
-        # Enrich with Excel
-        game_data = enrich_with_excel(best_game)
-        if game_data:
-            st.session_state.history.append(("meta", game_data))
+        if parsed:
+            best_game = parsed.get("best_match")
+            reason = parsed.get("reason", "No reason provided.")
+            others = parsed.get("others", [])
 
-    except Exception as e:
-        st.session_state.history.append(("bot", f"⚠️ Error parsing GPT reply: {gpt_reply}"))
+            # Friendly bot response
+            bot_message = f"🎯 Best match: **{best_game}**\n\n💡 Reason: {reason}"
+            if others:
+                bot_message += "\n\nOther related games: " + ", ".join(others)
+            st.session_state.history.append(("bot", bot_message))
+
+            # Enrich with Excel (only if best_match exists)
+            if best_game:
+                game_data = enrich_with_excel(best_game)
+                if game_data:
+                    st.session_state.history.append(("meta", game_data))
+        else:
+            # Handle bad GPT reply
+            st.session_state.history.append(("bot", "⚠️ Sorry, I couldn't understand the response."))
+
 
 # Render chat
 for role, msg in st.session_state.history:
