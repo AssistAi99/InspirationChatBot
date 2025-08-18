@@ -43,26 +43,24 @@ def search_candidates(query: str, top_k=3, threshold=0.70):
 
 def ask_gpt_strict(query: str, top_candidate: dict, other_candidates: list):
     """GPT explains strictly based on candidates. No invention allowed."""
-    context = f"Top candidate:\n- {top_candidate['Game Name']} (Publisher: {top_candidate['Publisher']}, Inspired by: {top_candidate['Inspiration']})\n"
-
-    if other_candidates:
-        context += "\nOther possible matches:\n"
-        for c in other_candidates:
-            context += f"- {c['Game Name']} (Publisher: {c['Publisher']})\n"
+    context = "Here are the available games:\n"
+    for c in candidates:
+        context += f"- {c['Game Name']} (Publisher: {c['Publisher']}, Inspired by: {c['Inspiration']})\n"
 
     prompt = f"""
-The user asked: "{query}"
+    The user asked: "{query}"
 
-{context}
+    {context}
 
-Rules:
--You must ONLY use the given candidates.
--Select the best-matching candidate to the user’s query (based on relevance). Users Query - {query}.
--Clearly state which game is the main recommendation and explain why it matches well.
--Mention that other candidates are also related, but emphasize the best match first.
--Never invent or add games that are not in the list.
--Respond in a friendly, conversational way.
-"""
+    Rules:
+    - You must ONLY use the given games.
+    - Select the ONE best-matching game based on the user's query (match can be in Game Name, Publisher, or Inspiration).
+    - Clearly state which game is the main recommendation and explain why it matches well.
+    - If other games are somewhat related, mention them briefly, but always emphasize the best match first.
+    - Never invent or add games that are not in the list.
+    - Respond in a friendly, conversational way.
+    """
+
 
     resp = openai.ChatCompletion.create(
         model="gpt-4o-mini",
