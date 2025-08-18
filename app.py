@@ -56,11 +56,12 @@ The user asked: "{query}"
 {context}
 
 Rules:
-- You must ONLY use the given candidates.
-- The best answer is always the **Top Candidate** ,which perfectly matches to the users query.
-- Mention that others are also related, but the main recommendation is the that one which matches the users query.
-- Never invent games that are not in the list.
-- Answer in a friendly, conversational way.
+-You must ONLY use the given candidates.
+-Select the best-matching candidate to the user’s query (based on relevance). Users Query - {query}.
+-Clearly state which game is the main recommendation and explain why it matches well.
+-Mention that other candidates are also related, but emphasize the best match first.
+-Never invent or add games that are not in the list.
+-Respond in a friendly, conversational way.
 """
 
     resp = openai.ChatCompletion.create(
