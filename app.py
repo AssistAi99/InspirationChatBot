@@ -45,7 +45,7 @@ def ask_gpt_strict(query: str, top_candidate: dict, other_candidates: list):
     """GPT explains strictly based on candidates. No invention allowed."""
     context = "Here are the available games:\n"
     for _, game in candidates:   # unpack tuple (score, dict)
-    context += f"- {game['Game Name']} (Publisher: {game['Publisher']}, Inspired by: {game['Inspiration']})\n"
+        context += f"- {game['Game Name']} (Publisher: {game['Publisher']}, Inspired by: {game['Inspiration']})\n"
 
 
     prompt = f"""
