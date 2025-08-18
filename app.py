@@ -44,7 +44,7 @@ def search_candidates(query: str, top_k=3, threshold=0.70):
 def ask_gpt_strict(query: str, top_candidate: dict, other_candidates: list):
     """GPT explains strictly based on candidates. No invention allowed."""    
     context = "Here are the available games:\n"
-    for c in top_candidate:
+    for c in other_candidates:
         context += f"- {c['Game Name']} (Publisher: {c['Publisher']}, Inspired by: {c['Inspiration']})\n"
 
 
@@ -100,7 +100,7 @@ if user_input:
         others = [c for c, _ in candidates[1:]]
 
         #gpt_reply = ask_gpt_strict(user_input, top_candidate, others)
-        gpt_reply = ask_gpt_strict(user_input, candidates, others)
+        gpt_reply = ask_gpt_strict(user_input, top_candidate, candidates)
         st.session_state.history.append(("bot", gpt_reply))
 
         # Enrich with Excel full data (URL, Icon, Game Screenshots, etc.)
