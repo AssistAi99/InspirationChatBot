@@ -7,7 +7,7 @@ import faiss
 import pandas as pd
 
 # ========== CONFIG ==========
-openai.api_key = "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"
+openai.api_key = st.secrets["OPENAI_API_KEY"]
 INDEX_FILE = "games_index.faiss"
 DATA_FILE = "games_data.jsonl"
 
