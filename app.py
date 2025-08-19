@@ -184,4 +184,7 @@ for role, msg in st.session_state.history:
         # Any extra columns will show automatically
         for col, val in msg.items():
             if col not in ["Game Name", "Publisher", "Inspiration", "Game URL", "Game Icon URL", "Game Screenshots"]:
-                st.write(f"**{col}:** {val}")
+                # Ensure it's a string and clean unwanted characters
+                clean_val = str(val).replace("_x000D_", "").strip()
+                st.write(f"**{col}:** {clean_val}")
+
