@@ -41,8 +41,9 @@ def extract_keywords(query: str):
     User query: "{query}"
 
     Rules:
-    - Exclude the generic word "game" (ignore it completely).
+    - Exclude the generic word "game" (ignore it completely) from everywhere.
     - Always include the exact words from the user query (don’t drop them).
+    - If the user query contains misspellings, correct them. If it contains extra spaces within a keyword (e.g., “water melon merge” → “watermelon merge”, “hexa sort” → “hexa sort”), merge the spaces and treat it as a single keyword for exact matching.
     - The number of keywords will always be between 1 and 3 (minimum 1, maximum 3).
     - Keep keywords short (1–2 words max).
     - Only include direct synonyms or very close related terms.
@@ -75,7 +76,7 @@ def extract_keywords(query: str):
 # ========== IMPROVED SEARCH WITH GROUPED KEYWORDS ==========
 from itertools import permutations
 
-def search_with_keywords(grouped_keywords: list, top_k=5, threshold=0.70):
+def search_with_keywordsold(grouped_keywords: list, top_k=5, threshold=0.70):
     seen = {}
 
     num_keywords = len(grouped_keywords)
@@ -113,6 +114,41 @@ def search_with_keywords(grouped_keywords: list, top_k=5, threshold=0.70):
     print("Final grouped search results:", results)
     return [r["record"] for r in results]
 
+# ========== HYBRID SEARCH WITH KEYWORDS ==========
+def search_with_keywords(grouped_keywords: list, top_k=5, threshold=0.70):
+    seen = {}
+
+    # 1️⃣ Search each keyword & synonym individually
+    for group in grouped_keywords:
+        for kw in group:
+            query_emb = get_embedding(kw)
+            D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
+            for score, idx in zip(D[0], I[0]):
+                if idx == -1:
+                    continue
+                similarity = 1 / (1 + score)
+                if similarity >= threshold - 0.1:
+                    if idx not in seen or similarity > seen[idx]["similarity"]:
+                        seen[idx] = {"record": game_records[idx], "similarity": similarity}
+
+    # 2️⃣ Search only a FEW combined phrases (not all permutations!)
+    #    - take first synonym from each group
+    main_phrase = " ".join([group[0] for group in grouped_keywords if group])
+    if main_phrase:
+        query_emb = get_embedding(main_phrase)
+        D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
+        for score, idx in zip(D[0], I[0]):
+            if idx == -1:
+                continue
+            similarity = 1 / (1 + score)
+            if similarity >= threshold - 0.1:
+                if idx not in seen or similarity > seen[idx]["similarity"]:
+                    seen[idx] = {"record": game_records[idx], "similarity": similarity}
+
+    # ✅ Final results
+    results = sorted(seen.values(), key=lambda x: x["similarity"], reverse=True)
+    print("Hybrid search results:", results)
+    return [r["record"] for r in results]
 
 
 # ========== NEW: GPT to pick best match ==========
@@ -132,8 +168,9 @@ def generate_final_answer(query: str, candidates: list):
     {context}
 
     Rules:
-    - Pick ONE game as the top recommendation if it clearly matches user's intent.
-    - Show it first with explanation.
+    - Pick ONE game as the top recommendation if it clearly matches user's query, match the exact words.
+    - If the user query contains misspellings, correct them. If it contains extra spaces, check by removing/merging spaces and treat them as a single word for an exact match.
+    - Match the user query exactly with Inspiration, Game Name, and Publisher Name (with highest priority on Inspiration). Return the game where at least 2 out of 3 or all 3 out of 3 inspirations match word-for-word exactly.    - Show it first with explanation.
     - Then list other related games.
     - If no strong match, say politely: "I’m not sure about an exact match, but here are some similar games..."
     - Output in friendly conversational style.
