@@ -194,7 +194,7 @@ def generate_final_answer(query: str, candidates: list):
 # =========================
 st.set_page_config(page_title="AI Game Recommender", page_icon="🎮", layout="centered")
 
-st.title("🎮 Game Recommender")
+st.title("🎮 Game Recommender Version 1")
 st.write("Ask me about any type of mobile game and I’ll suggest the best match!")
 
 if "history" not in st.session_state:
