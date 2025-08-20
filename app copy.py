@@ -33,38 +33,34 @@ def get_embedding(text: str):
     return response['data'][0]['embedding']
 
 
-# ========== NEW: GPT to extract grouped synonyms ==========
+# ========== NEW: GPT to extract only closest synonyms ==========
 def extract_keywords(query: str):
     prompt = f"""
-    Extract the core keywords (max 3) and group their closest synonyms.
+    Extract only the core keywords and their closest synonyms from the user request.
 
     User query: "{query}"
 
     Rules:
     - Exclude the generic word "game" (ignore it completely).
     - Always include the exact words from the user query (don’t drop them).
-    - The number of keywords will always be between 1 and 3 (minimum 1, maximum 3).
     - Keep keywords short (1–2 words max).
     - Only include direct synonyms or very close related terms.
     - Do NOT expand too much or include irrelevant associations.
     - Return strict JSON in this format:
     {{
-        "keywords": [
-            ["kw1", "synonym1", "synonym2"],
-            ["kw2", "synonym1", "synonym2"]
-        ]
+        "keywords": ["word1", "word2", "word3"]
     }}
     """
 
     resp = openai.ChatCompletion.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "You extract concise keywords and group their synonyms."},
+            {"role": "system", "content": "You extract concise keywords and very close synonyms only."},
             {"role": "user", "content": prompt}
         ]
     )
     reply = resp['choices'][0]['message']['content']
-    print("GPT grouped keyword output:", reply)
+    print("GPT keyword output:", reply)
 
     try:
         return json.loads(reply).get("keywords", [])
@@ -72,46 +68,65 @@ def extract_keywords(query: str):
         return []
 
 
-# ========== IMPROVED SEARCH WITH GROUPED KEYWORDS ==========
-from itertools import permutations
+# ========== IMPROVED PROGRESSIVE SEARCH ==========
+from itertools import combinations
 
-def search_with_keywords(grouped_keywords: list, top_k=5, threshold=0.70):
+def search_with_keywords(keywords: list, top_k=5, threshold=0.70):
     seen = {}
 
-    num_keywords = len(grouped_keywords)
+    # 1️⃣ Single keyword search
+    for kw in keywords:
+        query_emb = get_embedding(kw)
+        D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
+        for score, idx in zip(D[0], I[0]):
+            if idx == -1: continue
+            similarity = 1 / (1 + score)
+            if similarity >= threshold:
+                if idx not in seen or similarity > seen[idx]["similarity"]:
+                    seen[idx] = {"record": game_records[idx], "similarity": similarity}
 
-    # Case 1️⃣: Only one keyword → search with ALL synonyms (return broad results)
-    if num_keywords == 1:
-        for kw in grouped_keywords[0]:
-            query_emb = get_embedding(kw)
+    # 2️⃣ Pair combinations
+    for combo in combinations(keywords, 2):
+        phrase = " ".join(combo)
+        query_emb = get_embedding(phrase)
+        D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
+        for score, idx in zip(D[0], I[0]):
+            if idx == -1: continue
+            similarity = 1 / (1 + score)
+            if similarity >= threshold - 0.05:  # looser for pairs
+                if idx not in seen or similarity > seen[idx]["similarity"]:
+                    seen[idx] = {"record": game_records[idx], "similarity": similarity}
+
+    # 3️⃣ Triplet combinations
+    if len(keywords) >= 3:
+        for combo in combinations(keywords, 3):
+            phrase = " ".join(combo)
+            query_emb = get_embedding(phrase)
             D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
             for score, idx in zip(D[0], I[0]):
                 if idx == -1: continue
                 similarity = 1 / (1 + score)
-                if similarity >= threshold - 0.1:
+                if similarity >= threshold - 0.1:  # even looser for triplets
                     if idx not in seen or similarity > seen[idx]["similarity"]:
                         seen[idx] = {"record": game_records[idx], "similarity": similarity}
 
-    # Case 2️⃣ or 3️⃣: Multiple keywords → try permutations of arrays
-    else:
-        for perm in permutations(grouped_keywords, num_keywords):
-            # Create phrases by picking one synonym from each group
-            from itertools import product
-            for combo in product(*perm):
-                phrase = " ".join(combo)
-                query_emb = get_embedding(phrase)
-                D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
-                for score, idx in zip(D[0], I[0]):
-                    if idx == -1: continue
-                    similarity = 1 / (1 + score)
-                    if similarity >= threshold - 0.1:  # looser for multi-word
-                        if idx not in seen or similarity > seen[idx]["similarity"]:
-                            seen[idx] = {"record": game_records[idx], "similarity": similarity}
+    # 4️⃣ Full query search (as backup)
+    full_query = " ".join(keywords)
+    query_emb = get_embedding(full_query)
+    D, I = index.search(np.array([query_emb]).astype("float32"), top_k)
+    for score, idx in zip(D[0], I[0]):
+        if idx == -1: continue
+        similarity = 1 / (1 + score)
+        if similarity >= threshold:
+            if idx not in seen or similarity > seen[idx]["similarity"]:
+                seen[idx] = {"record": game_records[idx], "similarity": similarity}
 
-    # ✅ Final results
+    # ✅ Final results sorted
     results = sorted(seen.values(), key=lambda x: x["similarity"], reverse=True)
-    print("Final grouped search results:", results)
+    print("Final search results:", results)
     return [r["record"] for r in results]
+
+
 
 
 
@@ -157,7 +172,7 @@ def generate_final_answer(query: str, candidates: list):
 # =========================
 st.set_page_config(page_title="AI Game Recommender", page_icon="🎮", layout="centered")
 
-st.title("🎮 Game Recommender")
+st.title("🎮 AI Game Recommender")
 st.write("Ask me about any type of mobile game and I’ll suggest the best match!")
 
 if "history" not in st.session_state:
